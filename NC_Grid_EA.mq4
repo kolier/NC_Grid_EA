@@ -14,6 +14,7 @@
 //---------- Change Log ----------//
 /*
 0. 1.0 (2013-01-19) Initiate version.
+1.     (2013-01-29) Fix Entry_Cond.
 */
 
 
@@ -21,7 +22,7 @@
 // Information
 extern string Information = "--- Information ---";
 extern string     Advisor = "NC_Grid_EA";          // For Logging.
-extern string     Version = "1.0";                 // The version number of this script.
+extern string     Version = "1.0-1";               // The version number of this script.
 // Entry & Exit
 extern string        Entry_Exit = "--- Entry & Exit ---";
 extern int    Entry_Level_Limit = 20;                      // Only entry the first order within this level.
@@ -177,14 +178,12 @@ int order_queue_entry_junk[0], order_queue_exit[0], order_queue_exit_junk[0];
 string order_queue_entry[0,14];
 // Module: StealthMode
 string sm_plugins[2] = {"BreakEven", "TrailStop"};
-// EA
-datetime time_phase[0];
 // Phase Break
 int phase_break = PHASE_NONE;
-datetime time_phase_break = 0;
+datetime time_phase_break[2,2], time_trade_break[2,2], time_trade_break_start[2,2];
 // Phase Condition
 int phase_cond = PHASE_NONE;
-datetime time_phase_cond = 0;
+datetime time_phase_cond[2,2], time_trade_cond[2,2], time_trade_cond_start[2,2];
 // Level
 double level_lots_buy[0], level_lots_sell[0];
 int level_lots_buy_size = 0, level_lots_sell_size = 0;
@@ -195,7 +194,8 @@ int order_jar_magic_market[0], order_jar_ea_market[0];
 int order_jar_magic_market_size = 0, order_jar_ea_market_size = 0;
 // Indicator Reference
 double ma, ma_cond[2,5];
-int Cond[2,5], MA_Cond[2,5,5], PO_Cond[2,5,2];
+// PO_Cond (Price, Operator)
+int Cond[2,5], Cond_Count[2], MA_Cond[2,5,5], PO_Cond[2,5,2];
 double Dev_Cond[2,5];
 // Flag
 bool flag_entry = true;
@@ -234,7 +234,10 @@ int init()
         phase_size = phaseRegister("SCond");
     }
     
-    ArrayResize(time_phase, phase_size);
+    time_trade_break_start[0,0] = TimeCurrent() - 1;
+    time_trade_break_start[1,0] = TimeCurrent() - 1;
+    time_trade_cond_start[0,0] = TimeCurrent() - 1;
+    time_trade_cond_start[1,0] = TimeCurrent() - 1;
 
     return(0);
 }
@@ -320,9 +323,25 @@ bool hook_pre_start()
     }
     checkPhaseLevel();
     
-    calPhaseBreak();
-    calPhaseCond();
-    
+    int i, j;
+    bool bar_open;
+    for (i = 0; i < 2; i++)
+    {
+        for (j = 0; j < 2; j++)
+        {
+            if (j == 0)
+            {
+                bar_open = Entry_AtBarOpen;
+            }
+            else if (j == 1)
+            {
+                bar_open = Exit_AtBarOpen;
+            }
+            calPhaseBreak(i, j, bar_open);
+            calPhaseCond(i, j, bar_open);
+        }
+    }
+
     return(true);
 }
 
@@ -363,8 +382,13 @@ void hook_trading_pre_process(int ph)
     {
         if (phase[ph] == "LBreak")
         {
-            if (exitBreakOrders(OP_BUY) && phase_break == PHASE_DOWN)
+            if (
+                time_phase_break[0,1] > time_trade_break_start[0,1]
+                && time_trade_break_start[0,1] > time_trade_break[0,1]
+            )
             {
+                time_trade_break[0,1] = TimeCurrent();
+                time_trade_break_start[0,0] = TimeCurrent();
                 exitLong(ph);
                 if (phaseLevelNow(Close[0]) <= phaseLevel())
                 {
@@ -374,8 +398,13 @@ void hook_trading_pre_process(int ph)
         }
         if (phase[ph] == "SBreak")
         {
-            if (exitBreakOrders(OP_SELL) && phase_break == PHASE_UP)
+            if (
+                time_phase_break[1,1] > time_trade_break_start[1,1]
+                && time_trade_break_start[1,1] > time_trade_break[1,1]
+            )
             {
+                time_trade_break[1,1] = TimeCurrent();
+                time_trade_break_start[1,0] = TimeCurrent();
                 exitShort(ph);
                 if (phaseLevelNow(Close[0]) >= phaseLevel())
                 {
@@ -388,32 +417,72 @@ void hook_trading_pre_process(int ph)
     {
         if (phase[ph] == "LCond")
         {
-            if (phase_cond == PHASE_DOWN) exitLong(ph);
+            if (
+                time_phase_cond[0,1] > time_trade_cond_start[0,1]
+                && time_trade_cond_start[0,1] > time_trade_cond[0,1]
+            )
+            {
+                time_trade_cond[0,1] = TimeCurrent();
+                time_trade_cond_start[0,0] = TimeCurrent();
+                exitLong(ph);
+            }
         }
         if (phase[ph] == "SCond")
         {
-            if (phase_cond == PHASE_UP) exitShort(ph);
+            if (
+                time_phase_cond[1,1] > time_trade_cond_start[1,1]
+                && time_trade_cond_start[1,1] > time_trade_cond[1,1]
+            )
+            {
+                time_trade_cond[1,1] = TimeCurrent();
+                time_trade_cond_start[1,0] = TimeCurrent();
+                exitShort(ph);
+            }
         }
     }
 
     // Entry.
     if (flag_entry && countOrderQueue(order_queue_entry, phase[ph]) == 0)
     {
-        if (phase[ph] == "LBreak" && time_phase[ph] < Time[0])
+        if (phase[ph] == "LBreak")
         {
-            if (phase_break == PHASE_UP && time_phase[ph] < time_phase_break) entryLong(ph);
+            if (
+                time_phase_break[0,0] > time_trade_break_start[0,0]
+                && time_trade_break_start[0,0] > time_trade_break[0,0]
+            )
+            {
+                entryLong(ph);
+            }
         }
-        if (phase[ph] == "SBreak" && time_phase[ph] < Time[0])
+        if (phase[ph] == "SBreak")
         {
-            if (phase_break == PHASE_DOWN && time_phase[ph] < time_phase_break) entryShort(ph);
+            if (
+                time_phase_break[1,0] > time_trade_break_start[1,0]
+                && time_trade_break_start[1,0] > time_trade_break[1,0]
+            )
+            {
+                entryShort(ph);
+            }
         }
-        if (phase[ph] == "LCond" && time_phase[ph] < Time[0])
+        if (phase[ph] == "LCond")
         {
-            if (phase_cond == PHASE_UP && time_phase[ph] < time_phase_cond) entryLong(ph);
+            if (
+                time_phase_cond[0,0] > time_trade_cond_start[0,0]
+                && time_trade_cond_start[0,0] > time_trade_cond[0,0]
+            )
+            {
+                entryLong(ph);
+            }
         }
-        if (phase[ph] == "SCond" && time_phase[ph] < Time[0])
+        if (phase[ph] == "SCond")
         {
-            if (phase_cond == PHASE_DOWN && time_phase[ph] < time_phase_cond) entryShort(ph);
+            if (
+                time_phase_cond[1,0] > time_trade_cond_start[1,0]
+                && time_trade_cond_start[1,0] > time_trade_cond[1,0]
+            )
+            {
+                entryShort(ph);
+            }
         }
     }
 }
@@ -533,9 +602,13 @@ void paramCond()
 void _paramCond(int type, int mode)
 {
     string cond_section[5];
-    explodeToString(cond_section, paramCondString(OP_BUY, 0), ";");
+    explodeToString(cond_section, paramCondString(type, mode), ";");
     
     Cond[type,mode] = StrToInteger(cond_section[0]);
+    if (Cond[type,mode] == 1)
+    {
+        Cond_Count[type] = Cond_Count[type] + 1;
+    }
 
     PO_Cond[type,mode,0] = StrToInteger(cond_section[1]);
     if (cond_section[2] == ">")
@@ -604,7 +677,7 @@ string paramCondString(int type, int mode)
                 break;
         }
     }
-    
+
     return(ret);
 }
 
@@ -727,7 +800,7 @@ void logPhaseLevel(int level, double value, double dev)
  */
 void resetPhaseLevel()
 {
-    if (!GlobalVariableCheck(Advisor + "_Phase_Level")) return;
+    if (!GlobalVariableCheck(phasePrefix() + "_Level")) return;
     
     GlobalVariableDel(phasePrefix() + "_Level");
     GlobalVariableDel(phasePrefix() + "_Value");
@@ -865,111 +938,134 @@ void exitShort(int ph)
 
 /**
  * Calculate the cross level trading phase.
+ *
+ * type: 0 = OP_BUY, 1 = OP_SELL.
+ * mode: 0 = Entry, 1 = Exit.
  */
-void calPhaseBreak()
+void calPhaseBreak(int type, int mode, bool bar_open)
 {
-    static datetime time_check = 0;
-    if (time_check == Time[0] || TimeCurrent() - Time[0] > 15) return;
-    
-    int level_close = calLevel(Close[1], maValue(0), Grid, Entry_Level_Limit);
-    int level_open = calLevel(Open[1], maValue(0), Grid, Entry_Level_Limit);
-    // Exceeds limit.
-    if (level_close == 0 || level_open == 0) return;
-    
-    // Up Cross
-    if (phase_break != PHASE_UP && level_close > level_open)
+    static datetime time_check[2,2];
+    if (
+        bar_open
+        && (time_check[type,mode] == Time[0] || TimeCurrent() - Time[0] > 15)
+    )
     {
-        phase_break = PHASE_UP;
-        time_phase_break = Time[0];
-    }
-    else if (phase_break != PHASE_DOWN && level_close < level_open)
-    {
-        phase_break = PHASE_DOWN;
-        time_phase_break = Time[0];
+        return;
     }
     
+    // entry.
+    if (mode == 0)
+    {
+        int level_close, level_open;
+        if (bar_open)
+        {
+            level_close = calLevel(Close[1], maValue(0), Grid, Entry_Level_Limit);
+            level_open = calLevel(Open[1], maValue(0), Grid, Entry_Level_Limit);
+        }
+        else
+        {
+            level_close = calLevel(Close[0], maValue(0), Grid, Entry_Level_Limit);
+            level_open = calLevel(Open[0], maValue(0), Grid, Entry_Level_Limit);
+        }
+        // Exceeds limit.
+        if (level_close == 0 || level_open == 0) return;
+    
+        // Up Cross
+        if (type == OP_BUY)
+        {
+            if (level_close > level_open)
+            {
+                time_phase_break[type,mode] = TimeCurrent();
+            }
+        }
+        if (type == OP_SELL)
+        {
+            if (level_close < level_open)
+            {
+                time_phase_break[type,mode] = TimeCurrent();
+            }
+        }
+    }
+    
+    // exit
+    if (mode == 1)
+    {
+        if (type == OP_BUY)
+        {
+            if (phaseLevelHigh() - phaseLevel() >= Exit_Break_Orders - 1)
+            {
+                time_phase_break[type,mode] = TimeCurrent();
+            }
+        }
+        if (type == OP_SELL)
+        {
+            if (phaseLevel() - phaseLevelLow() >= Exit_Break_Orders - 1)
+            {
+                time_phase_break[type,mode] = TimeCurrent();
+            }
+        }
+    }
+
     //Print(phase_break);
     
-    time_check = Time[0];
+    time_check[type,mode] = Time[0];
 }
 
 /**
  * Calculate the condition trading phase.
  */
-void calPhaseCond()
+void calPhaseCond(int type, int mode, bool bar_open)
 {
-    static datetime time_check = 0;
-    if (time_check == Time[0] || TimeCurrent() - Time[0] > 15) return;
+    static datetime time_check[2,2];
+    if (
+        bar_open
+        && (time_check[type,mode] == Time[0] || TimeCurrent() - Time[0] > 15)
+    )
+    {
+        return;
+    }
 
-    bool cond;
-    int i, j;
-    // i = type, j = mode.
-    for (i = 0; i < 2; i++)
+    int cond = 0;
+    int i;
+    for (i = 0; i < 5; i++)
     {
-        cond = true;
-        
-        for (j = 0; j < 5; j++)
+        if (Cond[type,i] == 0) continue; 
+        if (PO_Cond[type,i,1] > 0)
         {
-            if (PO_Cond[i,j,1] > 0)
+            if (marketPrice(Symbol(), 0, PO_Cond[type,i,0]) > maCondValue(type, i, 0))
             {
-                if (marketPrice(Symbol(), 0, PO_Cond[i,j,0]) <= maCondValue(i, j, 0))
-                {
-                    cond = false;
-                    break;
-                }
-            }
-            else if (PO_Cond[i,j,1] < 0)
-            {
-                if (marketPrice(Symbol(), 0, PO_Cond[i,j,0]) >= maCondValue(i, j, 0))
-                {
-                    cond = false;
-                    break;
-                }
+                cond++;
             }
         }
-        
-        if (cond)
+        else if (PO_Cond[type,i,1] < 0)
         {
-            if (i == 0)
+            if (marketPrice(Symbol(), 0, PO_Cond[type,i,0]) < maCondValue(type, i, 0))
             {
-                phase_cond = PHASE_UP;
-                time_phase_cond = Time[0];
-            }
-            else if (i == 1)
-            {
-                phase_cond = PHASE_DOWN;
-                time_phase_cond = Time[0];
+                cond++;
             }
         }
     }
-    
-    time_check = Time[0];
-}
 
-/**
- * Check if allow to exit for Exit_Break_Orders.
- */
-bool exitBreakOrders(int type)
-{
-    if (Exit_Break_Orders == 1) return(true);
-    
-    bool ret = false;
-    if (type == OP_BUY)
+    // Entry.
+    if (mode == 0)
     {
-        if (phaseLevelHigh() - phaseLevel() >= Exit_Break_Orders - 1)
+        // All conditions fulfill.
+        if (cond == Cond_Count[type] && Cond_Count[type] > 0)
         {
-            ret = true;
+            time_phase_cond[type,mode] = TimeCurrent();
         }
     }
-    else if (type == OP_SELL)
+    // Exit.
+    if (mode == 1)
     {
-        if (phaseLevel() - phaseLevelLow() >= Exit_Break_Orders - 1)
+        // Not all conditions fulfill.
+        if (cond < Cond_Count[type] && Cond_Count[type] > 0)
         {
-            ret = true;
+            time_phase_cond[type,mode] = TimeCurrent();
         }
     }
-    
-    return(ret);
+
+    time_check[type,mode] = Time[0];
 }
 
 /**
@@ -1481,10 +1577,20 @@ void fxOrderQueueEntryProcess()
                 {
                     if (StringFind(cmt, phase[j]) != -1)
                     {
-                        time_phase[j] = Time[0];
+                        if (phase[j] == "LBreak" || phase[j] == "SBreak")
+                        {
+                            time_trade_break[cmd,0] = TimeCurrent();
+                            // Entry point is the point for allowing close.
+                            time_trade_break_start[cmd,1] = TimeCurrent();
+                        }
+                        else if (phase[j] == "LCond" || phase[j] == "SCond")
+                        {
+                            time_trade_cond[cmd,0] = TimeCurrent();
+                            time_trade_cond_start[cmd,1] = TimeCurrent();
+                        }
                     }
                 }
-                
+
                 flag_order_jar_ea = true;
             }
         }
