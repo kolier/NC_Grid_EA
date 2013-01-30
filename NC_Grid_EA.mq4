@@ -15,6 +15,10 @@
 /*
 0. 1.0 (2013-01-19) Initiate version.
 1.     (2013-01-29) Fix Entry_Cond.
+2.     (2013-01-30) Fix MarkOrder issue caused by order comment in the order open moment.
+                    BuyStop Level issue.
+                    Add AllowHedge option.
+                    Fix levelTP, levelSL phase name.
 */
 
 
@@ -22,7 +26,7 @@
 // Information
 extern string Information = "--- Information ---";
 extern string     Advisor = "NC_Grid_EA";          // For Logging.
-extern string     Version = "1.0-1";               // The version number of this script.
+extern string     Version = "1.0-2";               // The version number of this script.
 // Entry & Exit
 extern string        Entry_Exit = "--- Entry & Exit ---";
 extern int    Entry_Level_Limit = 20;                      // Only entry the first order within this level.
@@ -48,6 +52,7 @@ extern bool      Exit_AtBarOpen = true;                   // Whether to wait for
 extern bool       VolumeControl = true;                   // Use volume to control enter/left the market. Not directly open/close orders.
 extern double          VC_Entry = 200;                    // >=
 extern double           VC_Exit = 100;                    // <
+extern bool          AllowHedge = false;                  // If allow hedge order to be opened.
 // Level TP/SL/BE/TS
 extern string Level_Operation = "--- Level Operation ---";
 extern string  Level_Lots_Buy = "1,0,1.5,0,2,3,3,4,5,6,6,7"; // How many setting lots control how many orders would be opened.
@@ -120,7 +125,6 @@ extern string      SymbolSuffix = "";                          // Suffix to the 
 
 // Others
 int      Order_MaxOpen = 0;                         // Max opening orders allowd, 0 = No limit.
-bool  Order_AllowHedge = false;                     // If allow hedge order to be opened.
 double            Lots = 0.1;                       // Fixed trade lots without using MoneyManagement.
 
 //---------- Global Constant ----------//
@@ -449,6 +453,7 @@ void hook_trading_pre_process(int ph)
             if (
                 time_phase_break[0,0] > time_trade_break_start[0,0]
                 && time_trade_break_start[0,0] > time_trade_break[0,0]
+                && fxOrderAllowHedge(OP_BUY, phase[ph])
             )
             {
                 entryLong(ph);
@@ -459,6 +464,7 @@ void hook_trading_pre_process(int ph)
             if (
                 time_phase_break[1,0] > time_trade_break_start[1,0]
                 && time_trade_break_start[1,0] > time_trade_break[1,0]
+                && fxOrderAllowHedge(OP_SELL, phase[ph])
             )
             {
                 entryShort(ph);
@@ -469,6 +475,7 @@ void hook_trading_pre_process(int ph)
             if (
                 time_phase_cond[0,0] > time_trade_cond_start[0,0]
                 && time_trade_cond_start[0,0] > time_trade_cond[0,0]
+                && fxOrderAllowHedge(OP_BUY, phase[ph])
             )
             {
                 entryLong(ph);
@@ -479,6 +486,7 @@ void hook_trading_pre_process(int ph)
             if (
                 time_phase_cond[1,0] > time_trade_cond_start[1,0]
                 && time_trade_cond_start[1,0] > time_trade_cond[1,0]
+                && fxOrderAllowHedge(OP_SELL, phase[ph])
             )
             {
                 entryShort(ph);
@@ -881,7 +889,7 @@ void entryLong(int ph)
     {
         if (level_lots_buy[i] == 0) continue;
         po = devValue(value, Grid, level + i - 1);
-        cmt = phase[ph] + "_" + i + "_" + level + "_" + level_cls;
+        cmt = phase[ph] + "_" + i + "_" + (level + i) + "_" + level_cls;
         if (i == 0)
         {
             fxOrderImportEntryQueue(order_queue_entry, OP_BUY, cmt, 0, PRICE_PRICE, level_lots_buy[i] + levelCLSLots());
@@ -908,7 +916,7 @@ void entryShort(int ph)
     {
         if (level_lots_sell[i] == 0) continue;
         po = devValue(value, Grid, level - i + 1);
-        cmt = phase[ph] + "_" + i + "_" + level + "_" + level_cls;
+        cmt = phase[ph] + "_" + i + "_" + (level - i) + "_" + level_cls;
         if (i == 0)
         {
             fxOrderImportEntryQueue(order_queue_entry, OP_SELL, cmt, 0, PRICE_PRICE, level_lots_sell[i] + levelCLSLots());
@@ -1146,9 +1154,9 @@ void levelTP()
 {
     if (!inPhase()) return;
     
-    int level = GlobalVariableGet(Advisor + "_Phase_Level");
-    double value = GlobalVariableGet(Advisor + "_Phase_Value");
-    double dev = GlobalVariableGet(Advisor + "_Phase_Dev");
+    int level = GlobalVariableGet(phasePrefix() + "_Level");
+    double value = GlobalVariableGet(phasePrefix() + "_Value");
+    double dev = GlobalVariableGet(phasePrefix() + "_Dev");
     int level_now = calLevel(Close[0], value, dev, Entry_Level_Limit * 2);
 
     bool trigger = false;
@@ -1181,9 +1189,9 @@ void levelSL()
 {
     if (!inPhase()) return;
 
-    int level = GlobalVariableGet(Advisor + "_Phase_Level");
-    double value = GlobalVariableGet(Advisor + "_Phase_Value");
-    double dev = GlobalVariableGet(Advisor + "_Phase_Dev");
+    int level = GlobalVariableGet(phasePrefix() + "_Level");
+    double value = GlobalVariableGet(phasePrefix() + "_Value");
+    double dev = GlobalVariableGet(phasePrefix() + "_Dev");
     int level_now = calLevel(Close[0], value, dev, Entry_Level_Limit * 2);
 
     bool trigger = false;
@@ -1337,10 +1345,9 @@ void fxOrderJarEA()
 /**
  * Module: Order_AllowHedge.
  */
-/*
-bool fxOrderAllowHedge(int type)
+bool fxOrderAllowHedge(int type, string mode)
 {
-    if (Order_AllowHedge) return(true);
+    if (AllowHedge) return(true);
 
     bool ret = false;
     if (type == OP_BUY)
@@ -1357,10 +1364,29 @@ bool fxOrderAllowHedge(int type)
             ret = true;
         }
     }
+    
+    if (!ret)
+    {
+        if (mode == "LBreak")
+        {
+            time_trade_break_start[0,0] = time_phase_break[0,0];
+        }
+        else if (mode == "SBreak")
+        {
+            time_trade_break_start[1,0] = time_phase_break[1,0];
+        }
+        else if (mode == "LCond")
+        {
+            time_trade_cond_start[0,0] = time_phase_cond[0,0];
+        }
+        else if (mode == "SCond")
+        {
+            time_trade_cond_start[1,0] = time_phase_cond[1,0];
+        }
+    }
 
     return(ret);
 }
-*/
 
 /**
  * Filter by time for trading.
