@@ -19,6 +19,9 @@
                     BuyStop Level issue.
                     Add AllowHedge option.
                     Fix levelTP, levelSL phase name.
+3.     (2013-02-02) Fix Level_CLS.
+                    Fix time_trade_start reset.
+                    Fix maCondValue().
 */
 
 
@@ -26,7 +29,7 @@
 // Information
 extern string Information = "--- Information ---";
 extern string     Advisor = "NC_Grid_EA";          // For Logging.
-extern string     Version = "1.0-2";               // The version number of this script.
+extern string     Version = "1.0-3";               // The version number of this script.
 // Entry & Exit
 extern string        Entry_Exit = "--- Entry & Exit ---";
 extern int    Entry_Level_Limit = 20;                      // Only entry the first order within this level.
@@ -324,6 +327,10 @@ bool hook_pre_start()
     if (order_jar_ea_size == 0)
     {
         resetPhaseLevel();
+        time_trade_cond_start[0,0] = time_trade_cond[0,0] + 1;
+        time_trade_cond_start[1,0] = time_trade_cond[1,0] + 1;
+        time_trade_break_start[0,0] = time_trade_break[0,0] + 1;
+        time_trade_break_start[1,0] = time_trade_break[1,0] + 1;
     }
     checkPhaseLevel();
     
@@ -429,6 +436,10 @@ void hook_trading_pre_process(int ph)
                 time_trade_cond[0,1] = TimeCurrent();
                 time_trade_cond_start[0,0] = TimeCurrent();
                 exitLong(ph);
+                if (phaseLevelNow(Close[0]) <= phaseLevel())
+                {
+                    level_cls++;
+                }
             }
         }
         if (phase[ph] == "SCond")
@@ -441,6 +452,10 @@ void hook_trading_pre_process(int ph)
                 time_trade_cond[1,1] = TimeCurrent();
                 time_trade_cond_start[1,0] = TimeCurrent();
                 exitShort(ph);
+                if (phaseLevelNow(Close[0]) >= phaseLevel())
+                {
+                    level_cls++;
+                }
             }
         }
     }
@@ -580,6 +595,7 @@ double maValue(int index, bool mtf = true)
 double maCondValue(int type, int mode, int index)
 {
     ma_cond[type,mode] = iMA(NULL, MA_Cond[type,mode,0], MA_Cond[type,mode,1], MA_Cond[type,mode,2], MA_Cond[type,mode,3], MA_Cond[type,mode,4], index);
+    ma_cond[type,mode] = devValue(ma_cond[type,mode], Dev_Cond[type,mode], 1);
     
     return(ma_cond[type,mode]);
 }
@@ -889,6 +905,7 @@ void entryLong(int ph)
     {
         if (level_lots_buy[i] == 0) continue;
         po = devValue(value, Grid, level + i - 1);
+        levelCLSLots();
         cmt = phase[ph] + "_" + i + "_" + (level + i) + "_" + level_cls;
         if (i == 0)
         {
@@ -916,6 +933,7 @@ void entryShort(int ph)
     {
         if (level_lots_sell[i] == 0) continue;
         po = devValue(value, Grid, level - i + 1);
+        levelCLSLots();
         cmt = phase[ph] + "_" + i + "_" + (level - i) + "_" + level_cls;
         if (i == 0)
         {
@@ -1154,9 +1172,9 @@ void levelTP()
 {
     if (!inPhase()) return;
     
-    int level = GlobalVariableGet(phasePrefix() + "_Level");
-    double value = GlobalVariableGet(phasePrefix() + "_Value");
-    double dev = GlobalVariableGet(phasePrefix() + "_Dev");
+    int level = phaseLevel();
+    double value = phaseValue();
+    double dev = phaseDev();
     int level_now = calLevel(Close[0], value, dev, Entry_Level_Limit * 2);
 
     bool trigger = false;
@@ -1189,9 +1207,9 @@ void levelSL()
 {
     if (!inPhase()) return;
 
-    int level = GlobalVariableGet(phasePrefix() + "_Level");
-    double value = GlobalVariableGet(phasePrefix() + "_Value");
-    double dev = GlobalVariableGet(phasePrefix() + "_Dev");
+    int level = phaseLevel();
+    double value = phaseValue();
+    double dev = phaseDev();
     int level_now = calLevel(Close[0], value, dev, Entry_Level_Limit * 2);
 
     bool trigger = false;
@@ -1245,10 +1263,11 @@ void levelBE()
  */
 double levelCLSLots()
 {
-    if (!Level_CLS || level_cls < 0) return(0);
+    if (!Level_CLS) return(0);
     
     if(level_cls >= level_cls_lots_size) level_cls = -1;
     
+    if (level_cls < 0) return(0);
     //Print(level_cls);
     
     return(level_cls_lots[level_cls]);
@@ -1369,19 +1388,19 @@ bool fxOrderAllowHedge(int type, string mode)
     {
         if (mode == "LBreak")
         {
-            time_trade_break_start[0,0] = time_phase_break[0,0];
+            time_trade_break_start[0,0] = time_trade_break[0,0];
         }
         else if (mode == "SBreak")
         {
-            time_trade_break_start[1,0] = time_phase_break[1,0];
+            time_trade_break_start[1,0] = time_trade_break[1,0];
         }
         else if (mode == "LCond")
         {
-            time_trade_cond_start[0,0] = time_phase_cond[0,0];
+            time_trade_cond_start[0,0] = time_trade_cond[0,0];
         }
         else if (mode == "SCond")
         {
-            time_trade_cond_start[1,0] = time_phase_cond[1,0];
+            time_trade_cond_start[1,0] = time_trade_cond[1,0];
         }
     }
 
