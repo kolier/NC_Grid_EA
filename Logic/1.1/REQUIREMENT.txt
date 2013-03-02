@@ -1,0 +1,35 @@
+MTF price check as well
+-----------------------
+I mean that the EA should check the open of respective timeframe. So the condition would ask " is the daily open above its daily ema (parameters)". 
+So, an extra writting is needed. Instead of "1;1;>;240,6,0,1,1;0.125", it should be "1;1;240>;240,6,0,1,1;0.125".  in this case the EA reads "if the open of 240" chart is > ema 240, 6 ,0 ,1 ,1;0.125
+
+This is MUCH more relevant; Thank you to bring this modification 
+
+
+Reverse Package
+---------------
+The reverse package is for break mode only. I know it won't work with conditions. We assume there is no stop loss in break mode, as the EA will reverse position. Ea takes profit and stop loss when it reverses position. I just thought about that. The Exit_* cannot be applied to break mode.  
+
+I'm sorry you can't see clear in my graph.... 
+
+Condition Mode :
+1. Buy conditions fullfilled? 
+      a. Set 1 stop buy and 1 limit buy (the open is between 2 levels, the Ea sets an order above and below at the price of the grid at +/- 1 pip)
+      b.  Once 1 of the 2 orders is filled, THEN the EA delete the order not filled and can set ALL orders above and below the  price. Limit buy down to stop loss + 1 level (the last level is the stop loss), stop buy up to take profit - 1 level.
+      c. Exit Market checks the situation at every new bar. : conditions still true? the EA keeps the positions till tp or sl.    conditions false? EA exits market and delete pendings.  Then, if the sell conditions are fullfilled, the EA resets 2 sell orders, 1 limit, 1 stop at the very next top and bottom level. 
+and the cycle goes on.  Actually I've looked at the other EA you made for me and it does just that .
+same for sell conditions.
+
+
+Break Mode:
+
+1. The open is between 2 levels, of course.
+   a. Ea sets a stop buy on top and a stop sell at bottom at the price of the grid. So it will enter on a break. 
+   b. Stop sell is fullfilled. 
+   c. Ea adds set extra buy stop order on top equal to the amount of lot of the current trade. So the EA is net long if price cross the top level (the buy package that reverse position)
+   d. Ea sets 1 extra sell stop ( following sell sequence) at the level below if the tp is 3 for example. If it's 1, the EA stop process, take profit and wait for new bar the start a new cycle when it reaches level-1
+
+      If the buy package is triggered, then a sell package is set at the new bar right below the buy package level. Ea also adds extra lot at this moment if the CLS requires it. Each time the trade passes a level, the reverse package is moved accordingly. 
+
+there is no tp or sl really. It's more that we asked the EA to book profit or take loss after a certain number of cycle. I think that's the most confusing thing. 
+

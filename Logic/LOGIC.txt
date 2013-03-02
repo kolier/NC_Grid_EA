@@ -1,0 +1,82 @@
+NC_Grid_EA
+==========
+
+Requirement
+-----------
+1.0/EAv2.pdf
+
+
+Envelop Levels
+---------------
+
+Entry_Mode
+----------
+Entry_Mode_Condition
+Entry_Mode_Break
+
+(Can't be true at the same time.)
+
+Seems only need to have Entry_Mode_Condition for choice.
+
+
+Entry_Mode_Condition
+--------------------
+
+
+Entry_Mode_Break
+----------------
+level_old, level_now;
+Trade by level cross.
+
+
+Level TP/SL/BE
+-----------
+    // 1. If in trading sequece.
+    // 2. What's the start level.
+    // 3. What's the current level.
+
+Log the history high/low level. (Very useful)
+    
+Consecutive Loss Sequence
+-------------------------
+Up to 20 set, addtional to buy/sell consequence.
+
+
+Exit Market Option
+------------------
+Base on Buy/Sell Condition.
+
+
+Volume Start/End
+----------------
+
+Multiple EA Check
+-----------------
+Finally, the EA must be able to monitor several pair at the same time by being attached to several different currency pair but can only trade one pair at a time. If 2 signals come at the same time, the EA must choose the pair with the highest hourly tick volume.
+
+
+
+Chart Display
+-------------
+The EA must display a graphic history on the chart including Level bought or sold, consecutive loss sequence number, break even order, entry and exit point.
+
+(?)Grid Trading.
+
+Retrieve from order comment.
+
+[PHASE_TEXT]_[RELATIVE_LEVEL]_[REAL_LEVEL]_[CONSECUTIVE_LOST_SEQUENCE]
+
+Mark Order.
+Mark Entry, Exit, BreakEven.
+[RELATIVE_LEVEL]|[REAL_LEVEL]|[CONSECUTIVE_LOST_SEQUENCE]
+
+(?)Margin Check
+---------------
+
+
+
+
+
+
+
+
